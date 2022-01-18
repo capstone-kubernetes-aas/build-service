@@ -97,7 +97,7 @@ def build_request():
         return {"err": "Bad request: malformed config payload"}, 400
 
     try:
-        image_name = build_repo(reqj["repo_url"], reqj['repo_branch'], config)
+        image_name = build_repo(reqj["repo_url"], reqj["repo_branch"], config)
     except exc.GitCommandError:
         logging.error(f"failed to build: branch {config} does not exist")
         return {"err": f"Failed to build: branch {config} does not exist"}, 500
@@ -141,7 +141,9 @@ if __name__ == "__main__":
     try:
         image_name = build_repo(args["<repo-url>"], args["--branch"], config)
     except exc.GitCommandError:
-        logging.error(f"Error building repo: branch '{args['--branch']}' does not exist")
+        logging.error(
+            f"Error building repo: branch '{args['--branch']}' does not exist"
+        )
         exit(1)
     except Exception as e:
         logging.error(f"Error building repo: {e}")
