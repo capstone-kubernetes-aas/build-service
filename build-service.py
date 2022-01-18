@@ -25,7 +25,7 @@ import docker
 import yaml
 from docopt import docopt
 from flask import Flask, request
-from git import Repo, exc
+import git
 
 app = Flask(__name__)
 dclient = docker.from_env()
@@ -38,7 +38,7 @@ class MissingConfigFile(FileNotFoundError):
         super().__init__(self.message)
 
 
-class BadGitRepo(exc.GitError):
+class BadGitRepo(git.exc.GitError):
     def __init__(self, message="unable to clone repo"):
         self.message = message
 
@@ -46,7 +46,7 @@ class BadGitRepo(exc.GitError):
         return self.message
 
 
-class BadGitBranch(exc.GitError):
+class BadGitBranch(git.exc.GitError):
     def __init__(self, branch, message="unable to checkout branch"):
         self.branch = branch
         self.message = message
@@ -67,14 +67,14 @@ def build_repo(repo, branch, config):
         repo = re.sub(r"^https?://(:@)?", "https://:@", repo)
 
         try:
-            repo = Repo.clone_from(repo, repo_dir)
-        except exc.GitCommandError:
+            repo = git.Repo.clone_from(repo, repo_dir)
+        except git.exc.GitCommandError:
             raise BadGitRepo
 
         if branch is not None:
             try:
                 repo.git.checkout(branch)
-            except exc.GitCommandError:
+            except git.exc.GitCommandError:
                 raise BadGitBranch(branch)
 
         # parse options from default config ($REPO/kaas.yml) if none given
