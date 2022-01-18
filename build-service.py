@@ -91,7 +91,7 @@ def build_repo(repo, branch, config):
             except FileNotFoundError:
                 raise MissingConfigFile from FileNotFoundError
 
-        image = config["spec"]['template']["spec"]["containers"][0]['image']
+        image = config["spec"]["template"]["spec"]["containers"][0]["image"]
         dclient.images.build(path=repo_dir, tag=image)
 
     # return label of build image
