@@ -18,6 +18,7 @@ Options:
 
 import json
 import logging
+import re
 import tempfile
 
 import docker
@@ -32,11 +33,26 @@ dclient = docker.from_env()
 
 # custom exceptions
 class MissingConfigFile(FileNotFoundError):
-    """Raised when a config file is not found in the supplied repo"""
-
     def __init__(self, message="config file not found in repo or specified in request"):
         self.message = message
         super().__init__(self.message)
+
+
+class BadGitRepo(exc.GitError):
+    def __init__(self, message="unable to clone repo"):
+        self.message = message
+
+    def __str__(self):
+        return self.message
+
+
+class BadGitBranch(exc.GitError):
+    def __init__(self, branch, message="unable to checkout branch"):
+        self.branch = branch
+        self.message = message
+
+    def __str__(self):
+        return f"{self.message} '{self.branch}'"
 
 
 def build_repo(repo, branch, config):
@@ -44,11 +60,22 @@ def build_repo(repo, branch, config):
     with tempfile.TemporaryDirectory(prefix="kaas-repo-build-") as repo_dir:
 
         logging.info(f"cloning repo {repo} to {repo_dir}")
+
         # add empty creds to clone url
-        repo = Repo.clone_from(repo, repo_dir)
+        # git asks for auth if repo isnt public
+        # we're only supporting public repos for now
+        repo = re.sub(r"^https?://(:@)?", "https://:@", repo)
+
+        try:
+            repo = Repo.clone_from(repo, repo_dir)
+        except exc.GitCommandError:
+            raise BadGitRepo
 
         if branch is not None:
-            repo.git.checkout(branch)
+            try:
+                repo.git.checkout(branch)
+            except exc.GitCommandError:
+                raise BadGitBranch(branch)
 
         # parse options from default config ($REPO/kaas.yml) if none given
         if config is None:
@@ -64,10 +91,11 @@ def build_repo(repo, branch, config):
             except FileNotFoundError:
                 raise MissingConfigFile from FileNotFoundError
 
-        dclient.images.build(path=repo_dir, tag=config["metadata"]["labels"]["app"])
+        image = config["spec"]['template']["spec"]["containers"][0]['image']
+        dclient.images.build(path=repo_dir, tag=image)
 
     # return label of build image
-    return config["metadata"]["labels"]["app"]
+    return image
 
 
 # site.com/build: JSON API to start new build
@@ -98,12 +126,9 @@ def build_request():
 
     try:
         image_name = build_repo(reqj["repo_url"], reqj["repo_branch"], config)
-    except exc.GitCommandError:
-        logging.error(f"failed to build: branch {config} does not exist")
-        return {"err": f"Failed to build: branch {config} does not exist"}, 500
     except Exception as e:
-        logging.error(f"failed to build: {str(e)}")
-        return {"err": f"Failed to build: {str(e)}"}, 500
+        logging.error(f"failed to build: {e}")
+        return {"err": f"Failed to build: {e}"}, 500
 
     return {"image": image_name}
 
@@ -140,11 +165,6 @@ if __name__ == "__main__":
 
     try:
         image_name = build_repo(args["<repo-url>"], args["--branch"], config)
-    except exc.GitCommandError:
-        logging.error(
-            f"Error building repo: branch '{args['--branch']}' does not exist"
-        )
-        exit(1)
     except Exception as e:
         logging.error(f"Error building repo: {e}")
         exit(1)

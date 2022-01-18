@@ -6,6 +6,8 @@ Both the CLI and daemon take in a repository URL, and optional custom config
 file location. If no config is specified, it will look for `/kaas.yml` in the
 repository.
 
+The repo must be public and must contain a Dockerfile at `/Dockerfile`.
+
 ## CLI Usage
 
 See `-h`:
