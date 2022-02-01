@@ -27,10 +27,11 @@ import git
 import yaml
 from docopt import docopt
 from flask import Flask, request
+import git
+import kubernetes
 
 app = Flask(__name__)
 dclient = docker.from_env()
-
 
 # custom exceptions
 class MissingConfigFile(FileNotFoundError):
@@ -133,6 +134,14 @@ def build_repo(repo, branch, config):
         image_name = config["spec"]["template"]["spec"]["containers"][0]["image"]
         dclient.images.build(path=repo_dir, tag=image_name)
 
+    try:
+        kubernetes.config.load_kube_config()
+        k8s_apps_v1 = kubernetes.client.AppsV1Api()
+        resp = k8s_apps_v1.create_namespaced_deployment(body=config, namespace="default")
+    except Exception as e:
+        logging.error(f"failed to deploy: {e}")
+        return {"err": f"Failed to deploy: {e}"}, 500
+
     # return label of build image
     return image_name
 
@@ -214,4 +223,4 @@ if __name__ == "__main__":
         logging.error(f"Error building repo: {e}")
         exit(1)
 
-    print(f"Repository built successfully as '{image_name}'")
+    print(f"Repository built and deployed successfully as '{image_name}'")
