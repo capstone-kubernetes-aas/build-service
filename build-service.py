@@ -63,7 +63,7 @@ def build_repo(repo, branch, config):
 
         # add empty creds to clone url
         # git asks for auth if repo isnt public
-        # we're only supporting public repos for now
+        # wed're only supporting public repos for now
         repo = re.sub(r"^https?://(:@)?", "https://:@", repo)
 
         try:
@@ -90,6 +90,14 @@ def build_repo(repo, branch, config):
                     config = yaml.load(f, Loader=yaml.Loader)
             except FileNotFoundError:
                 raise MissingConfigFile from FileNotFoundError
+
+        # pull image before building to make sure its supported
+        with open(f"{repo_dir}/Dockerfile", "r") as df:
+            fromimage = re.search(r"FROM (.+)(:.+)?", df.read(), flags=re.IGNORECASE)
+
+        logging.info(f"pulling image {fromimage} to check architecture")
+
+        dclient.images.pull(fromimage)
 
         image = config["spec"]["template"]["spec"]["containers"][0]["image"]
         dclient.images.build(path=repo_dir, tag=image)
@@ -133,6 +141,7 @@ def build_request():
     return {"image": image_name}
 
 
+# if called from commandline, parse options and build image || start server
 if __name__ == "__main__":
     args = docopt(__doc__)
 
