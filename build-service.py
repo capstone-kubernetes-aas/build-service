@@ -24,14 +24,14 @@ import tempfile
 
 import docker
 import git
+import kubernetes
 import yaml
 from docopt import docopt
 from flask import Flask, request
-import git
-import kubernetes
 
 app = Flask(__name__)
 dclient = docker.from_env()
+
 
 # custom exceptions
 class MissingConfigFile(FileNotFoundError):
@@ -134,8 +134,11 @@ def build_repo(repo, branch, config):
         image_name = config["spec"]["template"]["spec"]["containers"][0]["image"]
         dclient.images.build(path=repo_dir, tag=image_name)
 
+    # deploying using kubernetes python api
     try:
+        # load kube config from ~/.kube/config
         kubernetes.config.load_kube_config()
+        # equivalent to "kubectl apply -f [config]"
         k8s_apps_v1 = kubernetes.client.AppsV1Api()
         resp = k8s_apps_v1.create_namespaced_deployment(body=config, namespace="default")
     except Exception as e:
