@@ -4,12 +4,12 @@
 KaaS Repo Build Script
 
 Usage:
-    build-service [-v] <repo-url> [--branch=<branch>] [--config=<path/to/config.yml>]
-    build-service [-v] --daemon [--port=<port>]
+    build-service [-v | -vv] <repo-url> [--branch=<branch>] [--config=<path/to/config.yml>]
+    build-service [-v | -vv] --daemon [--port=<port>]
 
 Options:
     -h --help           Show this help message
-    -v --verbose        Show verbose/debug output
+    -v --verbose        Show verbose/debug output. More v's for more verbosity.
     -b --branch=BRANCH  Branch/tag to checkout repo to [default: main]
     -c --config=FILE    Path to config file, if not at /kaas.yml in repo
     -d --daemon         Run in the background and listen for connections
@@ -18,14 +18,15 @@ Options:
 
 import json
 import logging
+import platform
 import re
 import tempfile
 
 import docker
+import git
 import yaml
 from docopt import docopt
 from flask import Flask, request
-import git
 
 app = Flask(__name__)
 dclient = docker.from_env()
@@ -53,6 +54,16 @@ class BadGitBranch(git.exc.GitError):
 
     def __str__(self):
         return f"{self.message} '{self.branch}'"
+
+
+class ArchNotSupported(Exception):
+    def __init__(self, image, arch, message="image not supported for arch"):
+        self.image = image
+        self.arch = arch
+        self.message = message
+
+    def __str__(self):
+        return f"image '{self.image}' does not support {self.arch}"
 
 
 def build_repo(repo, branch, config):
@@ -93,11 +104,27 @@ def build_repo(repo, branch, config):
 
         # pull image before building to make sure its supported
         with open(f"{repo_dir}/Dockerfile", "r") as df:
-            fromimage = re.search(r"FROM (.+)(:.+)?", df.read(), flags=re.IGNORECASE)
+            fromre = re.compile(r"^FROM (.+:?.+)", re.IGNORECASE | re.MULTILINE)
+            fromname = fromre.search(df.read()).groups()[0]
 
-        logging.info(f"pulling image {fromimage} to check architecture")
+        logging.info(f"pulling base image {fromname} to check architecture")
 
-        dclient.images.pull(fromimage)
+        # python arch string doesnt match docker arch string
+        platform_mappings = {
+            "x86": "386",
+            "x86_64": "amd64",
+            "armv7l": "arm",
+            "aarch64": "arm64",
+        }
+        platform_str = (
+            f"{platform.system()}/{platform_mappings[platform.machine()]}".lower()
+        )
+
+        fromdata = dclient.images.get_registry_data(fromname)
+        if not fromdata.has_platform(platform_str):
+            raise ArchNotSupported(fromdata, platform_str)
+
+        logging.info(f"base image {fromname} good, building image")
 
         image = config["spec"]["template"]["spec"]["containers"][0]["image"]
         dclient.images.build(path=repo_dir, tag=image)
@@ -145,10 +172,14 @@ def build_request():
 if __name__ == "__main__":
     args = docopt(__doc__)
 
-    logging.basicConfig(
-        format="%(levelname)s: %(message)s",
-        level=logging.DEBUG if args["--verbose"] else logging.WARN,
-    )
+    if args["--verbose"] == 2:
+        level = logging.DEBUG
+    elif args["--verbose"] == 1:
+        level = logging.INFO
+    else:
+        level = logging.WARN
+
+    logging.basicConfig(format="%(levelname)s: %(message)s", level=level)
 
     logging.debug(f"args: {args}")
 
