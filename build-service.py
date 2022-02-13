@@ -4,28 +4,29 @@
 KaaS Repo Build Script
 
 Usage:
-    build-service [-v] <repo-url> [--branch=<branch>] [--config=<path/to/config.yml>]
-    build-service [-v] --daemon [--port=<port>]
+    build-service [-v | -vv] <repo-url> [--branch=<branch>] [--config=<path/to/config.yml>]
+    build-service [-v | -vv] --daemon [--port=<port>]
 
 Options:
     -h --help           Show this help message
-    -v --verbose        Show verbose/debug output
+    -v --verbose        Show verbose/debug output. More v's for more verbosity.
     -b --branch=BRANCH  Branch/tag to checkout repo to [default: main]
-    -c --config=FILE    Path to config file, if not at /kaas.yml in repo
+    -c --config=FILE    Local path to config file, if not at /kaas.yml in repo
     -d --daemon         Run in the background and listen for connections
     -p --port=PORT      Port to listen for connections on [default: 8800]
 """
 
 import json
 import logging
+import platform
 import re
 import tempfile
 
 import docker
+import git
 import yaml
 from docopt import docopt
 from flask import Flask, request
-import git
 
 app = Flask(__name__)
 dclient = docker.from_env()
@@ -53,6 +54,17 @@ class BadGitBranch(git.exc.GitError):
 
     def __str__(self):
         return f"{self.message} '{self.branch}'"
+
+
+class ArchNotSupported(Exception):
+    def __init__(self, image, arch, supported, message="image not supported for arch"):
+        self.image = image.image_name
+        self.arch = arch
+        self.message = message
+        self.supported = supported
+
+    def __str__(self):
+        return f"image '{self.image}' does not support {self.arch} (supports {', '.join(self.supported)})"
 
 
 def build_repo(repo, branch, config):
@@ -91,11 +103,38 @@ def build_repo(repo, branch, config):
             except FileNotFoundError:
                 raise MissingConfigFile from FileNotFoundError
 
-        image = config["spec"]["template"]["spec"]["containers"][0]["image"]
-        dclient.images.build(path=repo_dir, tag=image)
+        # pull image before building to make sure its supported
+        with open(f"{repo_dir}/Dockerfile", "r") as df:
+            fromre = re.compile(r"^FROM (.+:?.+)", re.IGNORECASE | re.MULTILINE)
+            fromname = fromre.search(df.read()).groups()[0]
+
+        logging.info(f"pulling base image {fromname} to check architecture")
+
+        # python arch string doesnt match docker arch string
+        platform_mappings = {
+            "x86": "386",
+            "x86_64": "amd64",
+            "armv7l": "arm",
+            "aarch64": "arm64",
+        }
+        platform_str = (
+            f"{platform.system()}/{platform_mappings[platform.machine()]}".lower()
+        )
+
+        fromdata = dclient.images.get_registry_data(fromname)
+        platforms = [
+            f"{p['os']}/{p['architecture']}" for p in fromdata.attrs["Platforms"]
+        ]
+        if platform_str not in platforms:
+            raise ArchNotSupported(fromdata, platform_str, platforms)
+
+        logging.info(f"base image {fromname} good, building image")
+
+        image_name = config["spec"]["template"]["spec"]["containers"][0]["image"]
+        dclient.images.build(path=repo_dir, tag=image_name)
 
     # return label of build image
-    return image
+    return image_name
 
 
 # site.com/build: JSON API to start new build
@@ -130,16 +169,22 @@ def build_request():
         logging.error(f"failed to build: {e}")
         return {"err": f"Failed to build: {e}"}, 500
 
+    logging.info(f"repo built successfully as '{image_name}'")
     return {"image": image_name}
 
 
+# if called from commandline, parse options and build image || start server
 if __name__ == "__main__":
     args = docopt(__doc__)
 
-    logging.basicConfig(
-        format="%(levelname)s: %(message)s",
-        level=logging.DEBUG if args["--verbose"] else logging.WARN,
-    )
+    if args["--verbose"] == 2:
+        level = logging.DEBUG
+    elif args["--verbose"] == 1:
+        level = logging.INFO
+    else:
+        level = logging.WARN
+
+    logging.basicConfig(format="%(levelname)s: %(message)s", level=level)
 
     logging.debug(f"args: {args}")
 

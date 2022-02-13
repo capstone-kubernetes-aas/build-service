@@ -16,14 +16,14 @@ See `-h`:
 KaaS Repo Build Script
 
 Usage:
-    build-service [-v] <repo-url> [--branch=<branch>] [--config=<path/to/config.yml>]
-    build-service [-v] --daemon [--port=<port>]
+    build-service [-v | -vv] <repo-url> [--branch=<branch>] [--config=<path/to/config.yml>]
+    build-service [-v | -vv] --daemon [--port=<port>]
 
 Options:
     -h --help           Show this help message
-    -v --verbose        Show verbose/debug output
+    -v --verbose        Show verbose/debug output. More v's for more verbosity.
     -b --branch=BRANCH  Branch/tag to checkout repo to [default: main]
-    -c --config=FILE    Path to config file, if not at /kaas.yml in repo
+    -c --config=FILE    Local path to config file, if not at /kaas.yml in repo
     -d --daemon         Run in the background and listen for connections
     -p --port=PORT      Port to listen for connections on [default: 8800]
 ```
