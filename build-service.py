@@ -57,13 +57,14 @@ class BadGitBranch(git.exc.GitError):
 
 
 class ArchNotSupported(Exception):
-    def __init__(self, image, arch, message="image not supported for arch"):
-        self.image = image
+    def __init__(self, image, arch, supported, message="image not supported for arch"):
+        self.image = image.image_name
         self.arch = arch
         self.message = message
+        self.supported = supported
 
     def __str__(self):
-        return f"image '{self.image}' does not support {self.arch}"
+        return f"image '{self.image}' does not support {self.arch} (supports {', '.join(self.supported)})"
 
 
 def build_repo(repo, branch, config):
@@ -121,16 +122,19 @@ def build_repo(repo, branch, config):
         )
 
         fromdata = dclient.images.get_registry_data(fromname)
-        if not fromdata.has_platform(platform_str):
-            raise ArchNotSupported(fromdata, platform_str)
+        platforms = [
+            f"{p['os']}/{p['architecture']}" for p in fromdata.attrs["Platforms"]
+        ]
+        if platform_str not in platforms:
+            raise ArchNotSupported(fromdata, platform_str, platforms)
 
         logging.info(f"base image {fromname} good, building image")
 
-        image = config["spec"]["template"]["spec"]["containers"][0]["image"]
-        dclient.images.build(path=repo_dir, tag=image)
+        image_name = config["spec"]["template"]["spec"]["containers"][0]["image"]
+        dclient.images.build(path=repo_dir, tag=image_name)
 
     # return label of build image
-    return image
+    return image_name
 
 
 # site.com/build: JSON API to start new build
