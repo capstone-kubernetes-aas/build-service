@@ -133,8 +133,6 @@ def build_repo(repo, branch, config):
         image_name = config["spec"]["template"]["spec"]["containers"][0]["image"]
         dclient.images.build(path=repo_dir, tag=image_name)
 
-        logging.info(f"repo built successfully as '{image_name}'")
-
     # return label of build image
     return image_name
 
@@ -171,6 +169,7 @@ def build_request():
         logging.error(f"failed to build: {e}")
         return {"err": f"Failed to build: {e}"}, 500
 
+    logging.info(f"repo built successfully as '{image_name}'")
     return {"image": image_name}
 
 
