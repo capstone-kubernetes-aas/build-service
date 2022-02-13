@@ -75,7 +75,7 @@ def build_repo(repo, branch, config):
 
         # add empty creds to clone url
         # git asks for auth if repo isnt public
-        # wed're only supporting public repos for now
+        # we're only supporting public repos for now
         repo = re.sub(r"^https?://(:@)?", "https://:@", repo)
 
         try:
