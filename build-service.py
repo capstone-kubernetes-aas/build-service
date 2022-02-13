@@ -140,7 +140,7 @@ def build_repo(repo, branch, config):
         kubernetes.config.load_kube_config()
         # equivalent to "kubectl apply -f [config]"
         k8s_apps_v1 = kubernetes.client.AppsV1Api()
-        resp = k8s_apps_v1.create_namespaced_deployment(body=config, namespace="default")
+        k8s_apps_v1.create_namespaced_deployment(body=config, namespace=image_name)
     except Exception as e:
         logging.error(f"failed to deploy: {e}")
         return {"err": f"Failed to deploy: {e}"}, 500
