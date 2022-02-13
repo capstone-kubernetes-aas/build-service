@@ -28,6 +28,7 @@ import kubernetes
 import yaml
 from docopt import docopt
 from flask import Flask, request
+from kubernetes.client.rest import ApiException
 
 app = Flask(__name__)
 dclient = docker.from_env()
@@ -66,6 +67,14 @@ class ArchNotSupported(Exception):
 
     def __str__(self):
         return f"image '{self.image}' does not support {self.arch} (supports {', '.join(self.supported)})"
+
+
+class BadDeployError(ApiException):
+    def __init__(self, message="unable to deploy image"):
+        self.message = message
+
+    def __str__(self):
+        return self.message
 
 
 def build_repo(repo, branch, config):
@@ -133,17 +142,18 @@ def build_repo(repo, branch, config):
 
         image_name = config["spec"]["template"]["spec"]["containers"][0]["image"]
         dclient.images.build(path=repo_dir, tag=image_name)
+        image = config["spec"]["template"]["spec"]["containers"][0]["image"]
+        dclient.images.build(path=repo_dir, tag=image)
 
     # deploying using kubernetes python api
     try:
         # load kube config from ~/.kube/config
         kubernetes.config.load_kube_config()
-        # equivalent to "kubectl apply -f [config]"
         k8s_apps_v1 = kubernetes.client.AppsV1Api()
-        k8s_apps_v1.create_namespaced_deployment(body=config, namespace=image_name)
-    except Exception as e:
-        logging.error(f"failed to deploy: {e}")
-        return {"err": f"Failed to deploy: {e}"}, 500
+        # create deployment - equivalent to "kubectl apply -f [config]"
+        k8s_apps_v1.create_namespaced_deployment(body=config, namespace="default")
+    except ApiException:
+        raise BadDeployError(ApiException)
 
     # return label of build image
     return image_name
