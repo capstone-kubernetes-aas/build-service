@@ -40,9 +40,22 @@ Make a `POST` request to `<host>:8800/build` with the following JSON content:
   "repo_branch": null || "thebranch",
 
   // ONE of the following
-  "config": null,   // to use repo config
-  "config": { /* JSON of custom config */ },
-  "config": "{ JSON string of custom config }",
+  "deploy_config": null,   // use "deploy_config_path" (must not be null) 
+  "deploy_config": { /* JSON of deployment config */ },
+  "deploy_config": "{ JSON string of deployment config }",
+  
+  // ONE of the following
+  "service_config": null,   // use "service_config_path" (must not be null) 
+  "service_config": { /* JSON of service config */ },
+  "service_config": "{ JSON string of service config }",
+
+  // ONE of the following
+  "deploy_config_path": null,   // use "deploy_config" (must not be null) 
+  "deploy_config_path": "path/to/config",
+
+  // ONE of the following
+  "service_config_path": null,   // use "service_config" (must not be null) 
+  "service_config_path": "path/to/config",
 }
 ```
 
