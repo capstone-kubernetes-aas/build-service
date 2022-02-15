@@ -37,7 +37,9 @@ dclient = docker.from_env()
 
 # custom exceptions
 class MissingConfigFile(FileNotFoundError):
-    def __init__(self, filename, message="config file not found in repo or specified in request"):
+    def __init__(
+        self, filename, message="config file not found in repo or specified in request"
+    ):
         self.message = message
         self.filename = filename
 
@@ -88,7 +90,9 @@ def load_config_file(filename):
 
 def build_repo(repo, branch, deploy_conf, service_conf):
     # do work in temp dir
-    logging.debug(f"building repo '{repo}@{branch}' with deploy conf '{deploy_conf}' and service conf '{service_conf}'")
+    logging.debug(
+        f"building repo '{repo}@{branch}' with deploy conf '{deploy_conf}' and service conf '{service_conf}'"
+    )
 
     with tempfile.TemporaryDirectory(prefix="kaas-repo-build-") as repo_dir:
 
@@ -112,13 +116,13 @@ def build_repo(repo, branch, deploy_conf, service_conf):
 
         # parse options from default configs if none given ($REPO/kaas.{service,config}.yml)
         if deploy_conf is None:
-            deploy_conf = 'kaas.deploy.yml'
+            deploy_conf = "kaas.deploy.yml"
         if isinstance(deploy_conf, str):
             deploy_conf = load_config_file(f"{repo_dir}/{deploy_conf}")
 
         if service_conf is None:
-            service_conf = 'kaas.service.yml'
-        if isinstance(service_conf, str):   # if string, its a filepath to load from
+            service_conf = "kaas.service.yml"
+        if isinstance(service_conf, str):  # if string, its a filepath to load from
             service_conf = load_config_file(f"{repo_dir}/{service_conf}")
 
         # pull image before building to make sure its supported
@@ -163,7 +167,12 @@ def build_request():
 
     logging.debug(f"request: {reqj}")
 
-    if not ("repo_url" in reqj and "repo_branch" in reqj and "deploy_config" in reqj and "service_config" in reqj):
+    if not (
+        "repo_url" in reqj
+        and "repo_branch" in reqj
+        and "deploy_config" in reqj
+        and "service_config" in reqj
+    ):
         logging.error("missing keys")
         return {"err": "Bad request: missing keys"}, 400
 
@@ -176,7 +185,9 @@ def build_request():
         return {"err": "Bad request: malformed config payload"}, 400
 
     try:
-        image_name = build_repo(reqj["repo_url"], reqj["repo_branch"], deploy_conf, service_conf)
+        image_name = build_repo(
+            reqj["repo_url"], reqj["repo_branch"], deploy_conf, service_conf
+        )
     except Exception as e:
         logging.error(f"failed to build: {e}")
         return {"err": f"Failed to build: {e}"}, 500
@@ -208,7 +219,12 @@ if __name__ == "__main__":
     # image_name = build_repo(args["<repo-url>"], args["--branch"], args['--deploy-conf'], args['--service-conf'])
 
     try:
-        image_name = build_repo(args["<repo-url>"], args["--branch"], args['--deploy-conf'], args['--service-conf'])
+        image_name = build_repo(
+            args["<repo-url>"],
+            args["--branch"],
+            args["--deploy-conf"],
+            args["--service-conf"],
+        )
     except Exception as e:
         logging.error(f"Error building repo: {e}")
         exit(1)
