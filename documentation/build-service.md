@@ -16,16 +16,20 @@ See `-h`:
 KaaS Repo Build Script
 
 Usage:
-    build-service [-v | -vv] <repo-url> [--branch=<branch>] [--config=<path/to/config.yml>]
+    build-service [-v | -vv] <repo-url> [--branch=<branch>]
+                  [--deploy-conf=<path/to/deploy.yml>] [--service-conf=<path/to/service.yml>]
     build-service [-v | -vv] --daemon [--port=<port>]
 
-Options:
-    -h --help           Show this help message
-    -v --verbose        Show verbose/debug output. More v's for more verbosity.
-    -b --branch=BRANCH  Branch/tag to checkout repo to [default: main]
-    -c --config=FILE    Local path to config file, if not at /kaas.yml in repo
-    -d --daemon         Run in the background and listen for connections
-    -p --port=PORT      Port to listen for connections on [default: 8800]
+CLI Options:
+    -h --help               Show this help message
+    -v --verbose            Show verbose/debug output. More v's for more verbosity.
+    -b --branch=BRANCH      Branch/tag to checkout repo to [default: main]
+    -c --deploy-conf=FILE   Path to config file in repo, if not at /kaas.deploy.yml
+    -s --service-conf=FILE  Path to config file in repo, if not at /kaas.service.yml
+
+Daemon Options:
+    -d --daemon             Run in the background and listen for connections
+    -p --port=PORT          Port to listen for connections on [default: 8800]
 ```
 
 ## Daemon usage
@@ -43,7 +47,7 @@ Make a `POST` request to `<host>:8800/build` with the following JSON content:
   "deploy_config": null,  // use default path
   "deploy_config": "path/to/deploy.yml",
   "deploy_config": { /* custom JSON config object */ },
-  
+
    // ONE of the following
   "service_config": null,  // use default path
   "service_config": "path/to/deploy.yml",
