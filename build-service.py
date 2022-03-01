@@ -5,7 +5,8 @@ KaaS Repo Build Script
 
 Usage:
     build-service [-v | -vv] <repo-url> [--branch=<branch>] [--restart=<deployment_name>]
-                  [--delete=<deployment_name>] [--deploy-conf=<path/to/deploy.yml>] [--service-conf=<path/to/service.yml>]
+                  [--delete=<deployment_name>] [--deploy-conf=<path/to/deploy.yml>]
+                  [--service-conf=<path/to/service.yml>]
     build-service [-v | -vv] --daemon [--port=<port>]
 
 CLI Options:
@@ -267,6 +268,3 @@ if __name__ == "__main__":
                 print(f"Repository built and deployed successfully as '{image_name}'")
         except ApiException as e:
             raise KubernetesApiError(e)
-
-
-
