@@ -4,8 +4,8 @@
 KaaS Repo Build Script
 
 Usage:
-    build-service [-v | -vv] <repo-url> [--branch=<branch>]
-                  [--deploy-conf=<path/to/deploy.yml>] [--service-conf=<path/to/service.yml>]
+    build-service [-v | -vv] <repo-url> [--branch=<branch>] [--restart=<deployment_name>]
+                  [--delete=<deployment_name>] [--deploy-conf=<path/to/deploy.yml>] [--service-conf=<path/to/service.yml>]
     build-service [-v | -vv] --daemon [--port=<port>]
 
 CLI Options:
@@ -14,6 +14,8 @@ CLI Options:
     -b --branch=BRANCH      Branch/tag to checkout repo to [default: main]
     -c --deploy-conf=FILE   Path to config file in repo, if not at /kaas.deploy.yml
     -s --service-conf=FILE  Path to config file in repo, if not at /kaas.service.yml
+    -r --restart=NAME       Restart kubernetes deployment
+    -d --delete=NAME        Delete kubernetes deployment
 
 Daemon Options:
     -d --daemon             Run in the background and listen for connections
@@ -27,9 +29,11 @@ import tempfile
 
 import docker
 import git
+import kubernetes
 import yaml
 from docopt import docopt
 from flask import Flask, request
+from kubernetes.client.rest import ApiException
 
 app = Flask(__name__)
 dclient = docker.from_env()
@@ -75,6 +79,14 @@ class ArchNotSupported(Exception):
         return f"image '{self.image}' does not support {self.arch} (supports {', '.join(self.supported)})"
 
 
+class KubernetesApiError(ApiException):
+    def __init__(self, message):
+        self.message = message
+
+    def __str__(self):
+        return self.message
+
+
 def load_config_file(filename):
     logging.info(f"reading config file from {filename}")
 
@@ -88,73 +100,60 @@ def load_config_file(filename):
     return config
 
 
-def build_repo(repo, branch, deploy_conf, service_conf):
+def get_deploy_conf(deploy_conf, repo_dir):
+    # parse options from default config if none given
+    if deploy_conf is None:
+        deploy_conf = "kaas.deploy.yml"
+    if isinstance(deploy_conf, str):
+        return load_config_file(f"{repo_dir}/{deploy_conf}")
+
+
+def get_service_conf(service_conf, repo_dir):
+    # parse options from default config if none given
+    if service_conf is None:
+        service_conf = "kaas.service.yml"
+    if isinstance(service_conf, str):  # if string, its a filepath to load from
+        return load_config_file(f"{repo_dir}/{service_conf}")
+
+
+def build_repo(repo_dir, deploy_conf, service_conf):
     # do work in temp dir
     logging.debug(
         f"building repo '{repo}@{branch}' with deploy conf '{deploy_conf}' and service conf '{service_conf}'"
     )
 
-    with tempfile.TemporaryDirectory(prefix="kaas-repo-build-") as repo_dir:
+    # pull image before building to make sure its supported
+    with open(f"{repo_dir}/Dockerfile", "r") as df:
+        fromregex = re.compile(r"^FROM (.+:?.+)", re.IGNORECASE | re.MULTILINE)
+        fromname = fromregex.search(df.read()).groups()[0]
 
-        logging.info(f"cloning repo {repo} to {repo_dir}")
+    logging.info(f"pulling base image {fromname} to check architecture")
 
-        # add empty creds to clone url
-        # git asks for auth if repo isnt public
-        # we're only supporting public repos for now
-        repo = re.sub(r"^https?://(:@)?", "https://:@", repo)
+    # plat.machine() arch string doesn't match docker's arch string
+    platform_mappings = {
+        "python": "docker",
+        "x86": "386",
+        "x86_64": "amd64",
+        "armv7l": "arm",
+        "aarch64": "arm64",
+    }
+    platform_str = (
+        f"{platform.system()}/{platform_mappings[platform.machine()]}".lower()
+    )
 
-        try:
-            repo = git.Repo.clone_from(repo, repo_dir)
-        except git.exc.GitCommandError:
-            raise BadGitRepo
+    fromdata = dclient.images.get_registry_data(fromname)
+    platforms = [
+        f"{p['os']}/{p['architecture']}" for p in fromdata.attrs["Platforms"]
+    ]
+    if platform_str not in platforms:
+        raise ArchNotSupported(fromdata.image_name, platform_str, platforms)
 
-        if branch is not None:
-            try:
-                repo.git.checkout(branch)
-            except git.exc.GitCommandError:
-                raise BadGitBranch(branch)
+    logging.info(f"base image {fromname} good, continuing build")
 
-        # parse options from default configs if none given ($REPO/kaas.{service,config}.yml)
-        if deploy_conf is None:
-            deploy_conf = "kaas.deploy.yml"
-        if isinstance(deploy_conf, str):
-            deploy_conf = load_config_file(f"{repo_dir}/{deploy_conf}")
-
-        if service_conf is None:
-            service_conf = "kaas.service.yml"
-        if isinstance(service_conf, str):  # if string, its a filepath to load from
-            service_conf = load_config_file(f"{repo_dir}/{service_conf}")
-
-        # pull image before building to make sure its supported
-        with open(f"{repo_dir}/Dockerfile", "r") as df:
-            fromregex = re.compile(r"^FROM (.+:?.+)", re.IGNORECASE | re.MULTILINE)
-            fromname = fromregex.search(df.read()).groups()[0]
-
-        logging.info(f"pulling base image {fromname} to check architecture")
-
-        # plat.machine() arch string doesn't match docker's arch string
-        platform_mappings = {
-            "python": "docker",
-            "x86": "386",
-            "x86_64": "amd64",
-            "armv7l": "arm",
-            "aarch64": "arm64",
-        }
-        platform_str = (
-            f"{platform.system()}/{platform_mappings[platform.machine()]}".lower()
-        )
-
-        fromdata = dclient.images.get_registry_data(fromname)
-        platforms = [
-            f"{p['os']}/{p['architecture']}" for p in fromdata.attrs["Platforms"]
-        ]
-        if platform_str not in platforms:
-            raise ArchNotSupported(fromdata.image_name, platform_str, platforms)
-
-        logging.info(f"base image {fromname} good, continuing build")
-
-        image_name = deploy_conf["spec"]["template"]["spec"]["containers"][0]["image"]
-        dclient.images.build(path=repo_dir, tag=image_name)
+    image_name = deploy_conf["spec"]["template"]["spec"]["containers"][0]["image"]
+    dclient.images.build(path=repo_dir, tag=image_name)
+    image = deploy_conf["spec"]["template"]["spec"]["containers"][0]["image"]
+    dclient.images.build(path=repo_dir, tag=image)
 
     # return label of build image
     return image_name
@@ -218,15 +217,56 @@ if __name__ == "__main__":
 
     # image_name = build_repo(args["<repo-url>"], args["--branch"], args['--deploy-conf'], args['--service-conf'])
 
-    try:
-        image_name = build_repo(
-            args["<repo-url>"],
-            args["--branch"],
-            args["--deploy-conf"],
-            args["--service-conf"],
-        )
-    except Exception as e:
-        logging.error(f"Error building repo: {e}")
-        exit(1)
+    with tempfile.TemporaryDirectory(prefix="kaas-repo-build-") as repo_dir:
+        repo = args["<repo-url>"]
+        branch = args["--branch"]
+        logging.info(f"cloning repo {repo} to {branch}")
 
-    print(f"Repository built successfully as '{image_name}'")
+        # add empty creds to clone url
+        # git asks for auth if repo isnt public
+        # we're only supporting public repos for now
+        repo = re.sub(r"^https?://(:@)?", "https://:@", repo)
+
+        try:
+            repo = git.Repo.clone_from(repo, repo_dir)
+        except git.exc.GitCommandError:
+            raise BadGitRepo
+
+        if branch is not None:
+            try:
+                repo.git.checkout(branch)
+            except git.exc.GitCommandError:
+                raise BadGitBranch(branch)
+
+        deploy_conf = get_deploy_conf(args["--deploy-conf"], repo_dir)
+        service_conf = get_service_conf(args["--service-conf"], repo_dir)
+
+        # load kube config from ~/.kube/config
+        kubernetes.config.load_kube_config()
+        kubeneretes_api = kubernetes.client.AppsV1Api()
+        try:
+            if args["--restart"]:
+                image_name = args["--restart"]
+                kubeneretes_api.patch_namespaced_deployment(name=image_name, namespace="default", body=deploy_conf)
+                print(f"Successfully restarted '{image_name}'")
+            elif args["--delete"]:
+                image_name = args["--delete"]
+                kubeneretes_api.delete_namespaced_deployment(name=image_name, namespace="default")
+                print(f"Successfully deleted '{image_name}'")
+            else:
+                try:
+                    image_name = build_repo(
+                        repo_dir,
+                        deploy_conf,
+                        service_conf
+                    )
+                except Exception as e:
+                    logging.error(f"Error building repo: {e}")
+                    exit(1)
+                kubeneretes_api.create_namespaced_deployment(body=deploy_conf, namespace="default")
+                print(f"Repository built and deployed successfully as '{image_name}'")
+        except ApiException as e:
+            raise KubernetesApiError(e)
+
+
+
