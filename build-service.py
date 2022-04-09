@@ -117,12 +117,31 @@ def get_service_conf(service_conf, repo_dir):
         return load_config_file(f"{repo_dir}/{service_conf}")
 
 
-def build_repo(repo_dir, deploy_conf, service_conf):
+def clone_repo(repo, branch, repo_dir):
+    logging.info(f"cloning repo {repo} to {branch}")
+
+    # add empty creds to clone url
+    # git asks for auth if repo isnt public
+    # we're only supporting public repos for now
+    repo = re.sub(r"^https?://(:@)?", "https://:@", repo)
+
+    try:
+        repo = git.Repo.clone_from(repo, repo_dir)
+    except git.exc.GitCommandError:
+        raise BadGitRepo
+
+    if branch is not None:
+        try:
+            repo.git.checkout(branch)
+        except git.exc.GitCommandError:
+            raise BadGitBranch(branch)
+
+
+def build_repo(repo_dir, branch, deploy_conf, service_conf):
     # do work in temp dir
     logging.debug(
-        f"building repo '{repo}@{branch}' with deploy conf '{deploy_conf}' and service conf '{service_conf}'"
+        f"building repo '{repo_dir}@{branch}' with deploy conf '{deploy_conf}' and service conf '{service_conf}'"
     )
-
     # pull image before building to make sure its supported
     with open(f"{repo_dir}/Dockerfile", "r") as df:
         fromregex = re.compile(r"^FROM (.+:?.+)", re.IGNORECASE | re.MULTILINE)
@@ -143,9 +162,7 @@ def build_repo(repo_dir, deploy_conf, service_conf):
     )
 
     fromdata = dclient.images.get_registry_data(fromname)
-    platforms = [
-        f"{p['os']}/{p['architecture']}" for p in fromdata.attrs["Platforms"]
-    ]
+    platforms = [f"{p['os']}/{p['architecture']}" for p in fromdata.attrs["Platforms"]]
     if platform_str not in platforms:
         raise ArchNotSupported(fromdata.image_name, platform_str, platforms)
 
@@ -178,22 +195,36 @@ def build_request():
 
     # accepts json as string or as part of request json
     try:
-        deploy_conf = reqj["deploy_config"]
-        service_conf = reqj["service_config"]
+        deploy_conf_location = reqj["deploy_config"]
+        service_conf_location = reqj["service_config"]
     except Exception:
         logging.error("malformed config payload")
         return {"err": "Bad request: malformed config payload"}, 400
 
-    try:
-        image_name = build_repo(
-            reqj["repo_url"], reqj["repo_branch"], deploy_conf, service_conf
-        )
-    except Exception as e:
-        logging.error(f"failed to build: {e}")
-        return {"err": f"Failed to build: {e}"}, 500
+    with tempfile.TemporaryDirectory(prefix="kaas-repo-build-") as repo_dir:
+        clone_repo(reqj["repo_url"], reqj["repo_branch"], repo_dir)
+        deploy_conf = get_deploy_conf(deploy_conf_location, repo_dir)
+        service_conf = get_service_conf(service_conf_location, repo_dir)
 
-    logging.info(f"repo built successfully as '{image_name}'")
-    return {"image": image_name}
+        try:
+            image_name = build_repo(
+                repo_dir, reqj["repo_branch"], deploy_conf, service_conf
+            )
+        except Exception as e:
+            logging.error(f"failed to build: {e}")
+            return {"err": f"Failed to build: {e}"}, 500
+
+        # load kube config from ~/.kube/config
+        kubernetes.config.load_kube_config()
+        kubeneretes_api = kubernetes.client.AppsV1Api()
+        try:
+            kubeneretes_api.create_namespaced_deployment(
+                body=deploy_conf, namespace="default"
+            )
+        except ApiException as e:
+            raise KubernetesApiError(e)
+        print(f"Repository built and deployed successfully as '{image_name}'")
+        return {"image": image_name}
 
 
 # if called from commandline, parse options and build image || start server
@@ -216,29 +247,10 @@ if __name__ == "__main__":
         app.run(host="0.0.0.0", port=args["--port"], debug=args["--verbose"])
         exit(0)
 
-    # image_name = build_repo(args["<repo-url>"], args["--branch"], args['--deploy-conf'], args['--service-conf'])
-
     with tempfile.TemporaryDirectory(prefix="kaas-repo-build-") as repo_dir:
         repo = args["<repo-url>"]
         branch = args["--branch"]
-        logging.info(f"cloning repo {repo} to {branch}")
-
-        # add empty creds to clone url
-        # git asks for auth if repo isnt public
-        # we're only supporting public repos for now
-        repo = re.sub(r"^https?://(:@)?", "https://:@", repo)
-
-        try:
-            repo = git.Repo.clone_from(repo, repo_dir)
-        except git.exc.GitCommandError:
-            raise BadGitRepo
-
-        if branch is not None:
-            try:
-                repo.git.checkout(branch)
-            except git.exc.GitCommandError:
-                raise BadGitBranch(branch)
-
+        clone_repo(repo, branch, repo_dir)
         deploy_conf = get_deploy_conf(args["--deploy-conf"], repo_dir)
         service_conf = get_service_conf(args["--service-conf"], repo_dir)
 
@@ -248,23 +260,25 @@ if __name__ == "__main__":
         try:
             if args["--restart"]:
                 image_name = args["--restart"]
-                kubeneretes_api.patch_namespaced_deployment(name=image_name, namespace="default", body=deploy_conf)
+                kubeneretes_api.patch_namespaced_deployment(
+                    name=image_name, namespace="default", body=deploy_conf
+                )
                 print(f"Successfully restarted '{image_name}'")
             elif args["--delete"]:
                 image_name = args["--delete"]
-                kubeneretes_api.delete_namespaced_deployment(name=image_name, namespace="default")
+                kubeneretes_api.delete_namespaced_deployment(
+                    name=image_name, namespace="default"
+                )
                 print(f"Successfully deleted '{image_name}'")
             else:
                 try:
-                    image_name = build_repo(
-                        repo_dir,
-                        deploy_conf,
-                        service_conf
-                    )
+                    image_name = build_repo(repo_dir, branch, deploy_conf, service_conf)
                 except Exception as e:
                     logging.error(f"Error building repo: {e}")
                     exit(1)
-                kubeneretes_api.create_namespaced_deployment(body=deploy_conf, namespace="default")
+                kubeneretes_api.create_namespaced_deployment(
+                    body=deploy_conf, namespace="default"
+                )
                 print(f"Repository built and deployed successfully as '{image_name}'")
         except ApiException as e:
             raise KubernetesApiError(e)
