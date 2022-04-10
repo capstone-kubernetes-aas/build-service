@@ -4,8 +4,8 @@
 KaaS Repo Build Script
 
 Usage:
-    build-service [-v | -vv] <repo-url> [--branch=<branch>] [--restart=<deployment_name>]
-                  [--delete=<deployment_name>] [--deploy-conf=<path/to/deploy.yml>]
+    build-service [-v | -vv] <repo-url> [--branch=<branch>] [--restart=<image_name>]
+                  [--delete=<image_name>] [--deploy-conf=<path/to/deploy.yml>]
                   [--service-conf=<path/to/service.yml>]
     build-service [-v | -vv] --daemon [--port=<port>]
 
@@ -181,7 +181,6 @@ def build_repo(repo_dir, branch, deploy_conf, service_conf):
 @app.route("/build", methods=["POST"])
 def build_request():
     reqj = request.get_json()
-
     logging.debug(f"request: {reqj}")
 
     if not (
@@ -216,14 +215,67 @@ def build_request():
 
         # load kube config from ~/.kube/config
         kubernetes.config.load_kube_config()
-        kubeneretes_api = kubernetes.client.AppsV1Api()
+        kubernetes_api = kubernetes.client.AppsV1Api()
         try:
-            kubeneretes_api.create_namespaced_deployment(
+            kubernetes_api.create_namespaced_deployment(
                 body=deploy_conf, namespace="default"
             )
         except ApiException as e:
             raise KubernetesApiError(e)
-        print(f"Repository built and deployed successfully as '{image_name}'")
+        logging.info(f"Repository built and deployed successfully as '{image_name}'")
+        return {"image": image_name}
+
+
+# DELETE /build: JSON API to delete existing deployment
+@app.route("/build/<image_name>", methods=["DELETE"])
+def delete_request(image_name):
+    reqj = request.get_json()
+    logging.debug(f"request: {reqj}")
+
+    # load kube config from ~/.kube/config
+    kubernetes.config.load_kube_config()
+    kubernetes_api = kubernetes.client.AppsV1Api()
+    try:
+        kubernetes_api.delete_namespaced_deployment(
+            name=image_name, namespace="default"
+        )
+    except ApiException as e:
+        raise KubernetesApiError(e)
+    logging.info(f"Successfully deleted '{image_name}'")
+    return {"image": image_name}
+
+
+# PATCH /build: JSON API to delete existing deployment
+@app.route("/build/<image_name>", methods=["PATCH"])
+def restart_request(image_name):
+    reqj = request.get_json()
+    logging.debug(f"request: {reqj}")
+
+    if not ("repo_url" in reqj and "repo_branch" in reqj and "deploy_config" in reqj):
+        logging.error("missing keys")
+        return {"err": "Bad request: missing keys"}, 400
+
+    # accepts json as string or as part of request json
+    try:
+        deploy_conf_location = reqj["deploy_config"]
+    except Exception:
+        logging.error("malformed config payload")
+        return {"err": "Bad request: malformed config payload"}, 400
+
+    with tempfile.TemporaryDirectory(prefix="kaas-repo-build-") as repo_dir:
+        clone_repo(reqj["repo_url"], reqj["repo_branch"], repo_dir)
+        deploy_conf = get_deploy_conf(deploy_conf_location, repo_dir)
+
+        # load kube config from ~/.kube/config
+        kubernetes.config.load_kube_config()
+        kubernetes_api = kubernetes.client.AppsV1Api()
+        try:
+            kubernetes_api.patch_namespaced_deployment(
+                name=image_name, namespace="default", body=deploy_conf
+            )
+        except ApiException as e:
+            raise KubernetesApiError(e)
+        logging.info(f"Successfully restarted '{image_name}'")
         return {"image": image_name}
 
 
@@ -256,29 +308,31 @@ if __name__ == "__main__":
 
         # load kube config from ~/.kube/config
         kubernetes.config.load_kube_config()
-        kubeneretes_api = kubernetes.client.AppsV1Api()
+        kubernetes_api = kubernetes.client.AppsV1Api()
         try:
             if args["--restart"]:
                 image_name = args["--restart"]
-                kubeneretes_api.patch_namespaced_deployment(
+                kubernetes_api.patch_namespaced_deployment(
                     name=image_name, namespace="default", body=deploy_conf
                 )
-                print(f"Successfully restarted '{image_name}'")
+                logging.info(f"Successfully restarted '{image_name}'")
             elif args["--delete"]:
                 image_name = args["--delete"]
-                kubeneretes_api.delete_namespaced_deployment(
+                kubernetes_api.delete_namespaced_deployment(
                     name=image_name, namespace="default"
                 )
-                print(f"Successfully deleted '{image_name}'")
+                logging.info(f"Successfully deleted '{image_name}'")
             else:
                 try:
                     image_name = build_repo(repo_dir, branch, deploy_conf, service_conf)
                 except Exception as e:
                     logging.error(f"Error building repo: {e}")
                     exit(1)
-                kubeneretes_api.create_namespaced_deployment(
+                kubernetes_api.create_namespaced_deployment(
                     body=deploy_conf, namespace="default"
                 )
-                print(f"Repository built and deployed successfully as '{image_name}'")
+                logging.info(
+                    f"Repository built and deployed successfully as '{image_name}'"
+                )
         except ApiException as e:
             raise KubernetesApiError(e)
