@@ -170,8 +170,6 @@ def build_repo(repo_dir, branch, deploy_conf, service_conf):
 
     image_name = deploy_conf["spec"]["template"]["spec"]["containers"][0]["image"]
     dclient.images.build(path=repo_dir, tag=image_name)
-    image = deploy_conf["spec"]["template"]["spec"]["containers"][0]["image"]
-    dclient.images.build(path=repo_dir, tag=image)
 
     # return label of build image
     return image_name
