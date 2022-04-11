@@ -4,9 +4,9 @@
 KaaS Repo Build Script
 
 Usage:
-    build-service [-v | -vv] <repo-url> [--branch=<branch>] [--restart=<image_name>]
-                  [--delete=<image_name>] [--deploy-conf=<path/to/deploy.yml>]
-                  [--service-conf=<path/to/service.yml>]
+    build-service [-v | -vv] <repo-url> [--branch=<branch>]
+                  [--deploy-conf=<path/to/deploy.yml>] [--service-conf=<path/to/service.yml>]
+                  [--restart=<image_name> | --delete=<image_name>]
     build-service [-v | -vv] --daemon [--port=<port>]
 
 CLI Options:
