@@ -80,14 +80,6 @@ class ArchNotSupported(Exception):
         return f"image '{self.image}' does not support {self.arch} (supports {', '.join(self.supported)})"
 
 
-class KubernetesApiError(ApiException):
-    def __init__(self, message):
-        self.message = message
-
-    def __str__(self):
-        return self.message
-
-
 def load_config_file(filename):
     logging.info(f"reading config file from {filename}")
 
@@ -171,6 +163,9 @@ def build_repo(repo_dir, branch, deploy_conf, service_conf):
     image_name = deploy_conf["spec"]["template"]["spec"]["containers"][0]["image"]
     dclient.images.build(path=repo_dir, tag=image_name)
 
+    # push image to local repository
+    dclient.images.push(f"localhost:5000/{image_name}")
+
     # return label of build image
     return image_name
 
@@ -219,8 +214,11 @@ def build_request():
                 body=deploy_conf, namespace="default"
             )
         except ApiException as e:
-            raise KubernetesApiError(e)
+            logging.error(f"failed to deploy: {e}")
+            return {"err": f"Failed to deploy: {e}"}, 500
+
         logging.info(f"Repository built and deployed successfully as '{image_name}'")
+
         return {"image": image_name}
 
 
@@ -238,8 +236,11 @@ def delete_request(image_name):
             name=image_name, namespace="default"
         )
     except ApiException as e:
-        raise KubernetesApiError(e)
+        logging.error(f"failed to deploy: {e}")
+        return {"err": f"Failed to deploy: {e}"}, 500
+
     logging.info(f"Successfully deleted '{image_name}'")
+
     return {"image": image_name}
 
 
@@ -272,8 +273,11 @@ def restart_request(image_name):
                 name=image_name, namespace="default", body=deploy_conf
             )
         except ApiException as e:
-            raise KubernetesApiError(e)
+            logging.error(f"failed to restart: {e}")
+            return {"err": f"Failed to restart: {e}"}, 500
+
         logging.info(f"Successfully restarted '{image_name}'")
+
         return {"image": image_name}
 
 
@@ -314,23 +318,29 @@ if __name__ == "__main__":
                     name=image_name, namespace="default", body=deploy_conf
                 )
                 logging.info(f"Successfully restarted '{image_name}'")
+
             elif args["--delete"]:
                 image_name = args["--delete"]
                 kubernetes_api.delete_namespaced_deployment(
                     name=image_name, namespace="default"
                 )
                 logging.info(f"Successfully deleted '{image_name}'")
+
             else:
                 try:
                     image_name = build_repo(repo_dir, branch, deploy_conf, service_conf)
                 except Exception as e:
                     logging.error(f"Error building repo: {e}")
                     exit(1)
+
                 kubernetes_api.create_namespaced_deployment(
                     body=deploy_conf, namespace="default"
                 )
+
                 logging.info(
                     f"Repository built and deployed successfully as '{image_name}'"
                 )
+
         except ApiException as e:
-            raise KubernetesApiError(e)
+            logging.error(f"Error deploying repo: {e}")
+            exit(1)
