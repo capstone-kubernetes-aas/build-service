@@ -161,10 +161,11 @@ def build_repo(repo_dir, branch, deploy_conf, service_conf):
     logging.info(f"base image {fromname} good, continuing build")
 
     image_name = deploy_conf["spec"]["template"]["spec"]["containers"][0]["image"]
-    dclient.images.build(path=repo_dir, tag=image_name)
+    image, _logs = dclient.images.build(path=repo_dir, tag=image_name)
 
     # push image to local repository
     logging.debug(f"pushing image to localhost:5000/{image_name}")
+    image.tag(image_name, tag=f"localhost:5000/{image_name}")
     dclient.images.push(f"localhost:5000/{image_name}")
 
     # return label of build image
