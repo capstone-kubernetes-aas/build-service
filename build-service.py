@@ -164,6 +164,7 @@ def build_repo(repo_dir, branch, deploy_conf, service_conf):
     dclient.images.build(path=repo_dir, tag=image_name)
 
     # push image to local repository
+    logging.debug(f"pushing image to localhost:5000/{image_name}")
     dclient.images.push(f"localhost:5000/{image_name}")
 
     # return label of build image
@@ -206,6 +207,7 @@ def build_request():
             logging.error(f"failed to build: {e}")
             return {"err": f"Failed to build: {e}"}, 500
 
+        logging.debug("deploying to k8s")
         # load kube config from ~/.kube/config
         kubernetes.config.load_kube_config()
         kubernetes_api = kubernetes.client.AppsV1Api()
@@ -228,6 +230,7 @@ def delete_request(image_name):
     reqj = request.get_json()
     logging.debug(f"request: {reqj}")
 
+    logging.debug(f"deleting {image_name} from k8s")
     # load kube config from ~/.kube/config
     kubernetes.config.load_kube_config()
     kubernetes_api = kubernetes.client.AppsV1Api()
@@ -244,7 +247,7 @@ def delete_request(image_name):
     return {"image": image_name}
 
 
-# PATCH /build: JSON API to delete existing deployment
+# PATCH /build: JSON API to restart existing deployment
 @app.route("/build/<image_name>", methods=["PATCH"])
 def restart_request(image_name):
     reqj = request.get_json()
@@ -265,6 +268,7 @@ def restart_request(image_name):
         clone_repo(reqj["repo_url"], reqj["repo_branch"], repo_dir)
         deploy_conf = get_deploy_conf(deploy_conf_location, repo_dir)
 
+        logging.debug(f"restarting {image_name} in k8s")
         # load kube config from ~/.kube/config
         kubernetes.config.load_kube_config()
         kubernetes_api = kubernetes.client.AppsV1Api()
