@@ -165,7 +165,7 @@ def build_repo(repo_dir, branch, deploy_conf, service_conf):
 
     # push image to local repository
     logging.debug(f"pushing image to localhost:5000/{image_name}")
-    image.tag(image_name, tag=f"localhost:5000/{image_name}")
+    image.tag(f"localhost:5000/{image_name}", tag="latest")
     dclient.images.push(f"localhost:5000/{image_name}")
 
     # return label of build image
