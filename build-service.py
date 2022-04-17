@@ -80,14 +80,6 @@ class ArchNotSupported(Exception):
         return f"image '{self.image}' does not support {self.arch} (supports {', '.join(self.supported)})"
 
 
-class KubernetesApiError(ApiException):
-    def __init__(self, message):
-        self.message = message
-
-    def __str__(self):
-        return self.message
-
-
 def load_config_file(filename):
     logging.info(f"reading config file from {filename}")
 
@@ -106,7 +98,15 @@ def get_deploy_conf(deploy_conf, repo_dir):
     if deploy_conf is None:
         deploy_conf = "kaas.deploy.yml"
     if isinstance(deploy_conf, str):
-        return load_config_file(f"{repo_dir}/{deploy_conf}")
+        loaded_conf = load_config_file(f"{repo_dir}/{deploy_conf}")
+        # make image build to localhost registry by modifying tag in config, if not present
+        image_name = loaded_conf["spec"]["template"]["spec"]["containers"][0]["image"]
+        if not image_name.startswith("localhost:5000/"):
+            loaded_conf["spec"]["template"]["spec"]["containers"][0]["image"] = (
+                "localhost:5000/" + image_name
+            )
+
+        return loaded_conf
 
 
 def get_service_conf(service_conf, repo_dir):
@@ -171,6 +171,10 @@ def build_repo(repo_dir, branch, deploy_conf, service_conf):
     image_name = deploy_conf["spec"]["template"]["spec"]["containers"][0]["image"]
     dclient.images.build(path=repo_dir, tag=image_name)
 
+    # push image to local repository
+    logging.debug(f"pushing image to {image_name}")
+    dclient.images.push(f"{image_name}")
+
     # return label of build image
     return image_name
 
@@ -211,6 +215,7 @@ def build_request():
             logging.error(f"failed to build: {e}")
             return {"err": f"Failed to build: {e}"}, 500
 
+        logging.debug("deploying to k8s")
         # load kube config from ~/.kube/config
         kubernetes.config.load_kube_config()
         kubernetes_api = kubernetes.client.AppsV1Api()
@@ -219,9 +224,12 @@ def build_request():
                 body=deploy_conf, namespace="default"
             )
         except ApiException as e:
-            raise KubernetesApiError(e)
+            logging.error(f"failed to deploy: {e}")
+            return {"err": f"Failed to deploy: {e}"}, 500
+
         logging.info(f"Repository built and deployed successfully as '{image_name}'")
-        return {"image": image_name}
+
+    return {"image": image_name}
 
 
 # DELETE /build: JSON API to delete existing deployment
@@ -230,6 +238,7 @@ def delete_request(image_name):
     reqj = request.get_json()
     logging.debug(f"request: {reqj}")
 
+    logging.debug(f"deleting {image_name} from k8s")
     # load kube config from ~/.kube/config
     kubernetes.config.load_kube_config()
     kubernetes_api = kubernetes.client.AppsV1Api()
@@ -238,12 +247,15 @@ def delete_request(image_name):
             name=image_name, namespace="default"
         )
     except ApiException as e:
-        raise KubernetesApiError(e)
+        logging.error(f"failed to deploy: {e}")
+        return {"err": f"Failed to deploy: {e}"}, 500
+
     logging.info(f"Successfully deleted '{image_name}'")
+
     return {"image": image_name}
 
 
-# PATCH /build: JSON API to delete existing deployment
+# PATCH /build: JSON API to restart existing deployment
 @app.route("/build/<image_name>", methods=["PATCH"])
 def restart_request(image_name):
     reqj = request.get_json()
@@ -264,6 +276,7 @@ def restart_request(image_name):
         clone_repo(reqj["repo_url"], reqj["repo_branch"], repo_dir)
         deploy_conf = get_deploy_conf(deploy_conf_location, repo_dir)
 
+        logging.debug(f"restarting {image_name} in k8s")
         # load kube config from ~/.kube/config
         kubernetes.config.load_kube_config()
         kubernetes_api = kubernetes.client.AppsV1Api()
@@ -272,9 +285,12 @@ def restart_request(image_name):
                 name=image_name, namespace="default", body=deploy_conf
             )
         except ApiException as e:
-            raise KubernetesApiError(e)
+            logging.error(f"failed to restart: {e}")
+            return {"err": f"Failed to restart: {e}"}, 500
+
         logging.info(f"Successfully restarted '{image_name}'")
-        return {"image": image_name}
+
+    return {"image": image_name}
 
 
 # if called from commandline, parse options and build image || start server
@@ -314,23 +330,29 @@ if __name__ == "__main__":
                     name=image_name, namespace="default", body=deploy_conf
                 )
                 logging.info(f"Successfully restarted '{image_name}'")
+
             elif args["--delete"]:
                 image_name = args["--delete"]
                 kubernetes_api.delete_namespaced_deployment(
                     name=image_name, namespace="default"
                 )
                 logging.info(f"Successfully deleted '{image_name}'")
+
             else:
                 try:
                     image_name = build_repo(repo_dir, branch, deploy_conf, service_conf)
                 except Exception as e:
                     logging.error(f"Error building repo: {e}")
                     exit(1)
+
                 kubernetes_api.create_namespaced_deployment(
                     body=deploy_conf, namespace="default"
                 )
+
                 logging.info(
                     f"Repository built and deployed successfully as '{image_name}'"
                 )
+
         except ApiException as e:
-            raise KubernetesApiError(e)
+            logging.error(f"Error deploying repo: {e}")
+            exit(1)
