@@ -229,7 +229,7 @@ def build_request():
 
         logging.info(f"Repository built and deployed successfully as '{image_name}'")
 
-        return {"image": image_name}
+    return {"image": image_name}
 
 
 # DELETE /build: JSON API to delete existing deployment
@@ -290,7 +290,7 @@ def restart_request(image_name):
 
         logging.info(f"Successfully restarted '{image_name}'")
 
-        return {"image": image_name}
+    return {"image": image_name}
 
 
 # if called from commandline, parse options and build image || start server
