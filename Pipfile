@@ -10,6 +10,7 @@ docker = "*"
 pyyaml = "*"
 flask = "*"
 kubernetes = "*"
+importlib-metadata = "*"
 
 [dev-packages]
 flake8 = "*"
