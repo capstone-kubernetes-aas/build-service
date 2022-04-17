@@ -6,7 +6,7 @@ Requires=docker.socket
 [Service]
 Type=simple
 WorkingDirectory=/opt/build-service
-ExecStartPre=pipenv install --deploy
+ExecStartPre=+pipenv install --deploy
 ExecStart=pipenv run python ./build-service.py --daemon --port 8800
 Restart=always
 DynamicUser=yes
