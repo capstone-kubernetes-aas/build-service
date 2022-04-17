@@ -98,7 +98,15 @@ def get_deploy_conf(deploy_conf, repo_dir):
     if deploy_conf is None:
         deploy_conf = "kaas.deploy.yml"
     if isinstance(deploy_conf, str):
-        return load_config_file(f"{repo_dir}/{deploy_conf}")
+        loaded_conf = load_config_file(f"{repo_dir}/{deploy_conf}")
+        # make image build to localhost registry by modifying tag in config, if not present
+        image_name = loaded_conf["spec"]["template"]["spec"]["containers"][0]["image"]
+        if not image_name.startswith("localhost:5000/"):
+            loaded_conf["spec"]["template"]["spec"]["containers"][0]["image"] = (
+                "localhost:5000/" + image_name
+            )
+
+        return loaded_conf
 
 
 def get_service_conf(service_conf, repo_dir):
@@ -161,12 +169,11 @@ def build_repo(repo_dir, branch, deploy_conf, service_conf):
     logging.info(f"base image {fromname} good, continuing build")
 
     image_name = deploy_conf["spec"]["template"]["spec"]["containers"][0]["image"]
-    image, _logs = dclient.images.build(path=repo_dir, tag=image_name)
+    dclient.images.build(path=repo_dir, tag=image_name)
 
     # push image to local repository
-    logging.debug(f"pushing image to localhost:5000/{image_name}")
-    image.tag(f"localhost:5000/{image_name}", tag="latest")
-    dclient.images.push(f"localhost:5000/{image_name}")
+    logging.debug(f"pushing image to {image_name}")
+    dclient.images.push(f"{image_name}")
 
     # return label of build image
     return image_name
