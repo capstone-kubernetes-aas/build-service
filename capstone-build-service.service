@@ -1,0 +1,16 @@
+[Unit]
+Description=K8S Capstone Build Service Daemon
+After=docker.socket
+Requires=docker.socket
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/build-service
+ExecStartPre=pipenv install --deploy
+ExecStart=pipenv run python ./build-service.py --daemon --port 8800
+Restart=always
+DynamicUser=yes
+SupplementaryGroups=docker
+
+[Install]
+WantedBy=multi-user.target
