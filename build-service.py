@@ -203,7 +203,9 @@ def create_namespace(kubernetes_api, deploy_conf):
                 testclient = dynamic.DynamicClient(
                     api_client.ApiClient(configuration=config.load_kube_config())
                 )
-                namespace_api = testclient.resources.get(api_version="v1", kind="Namespace")
+                namespace_api = testclient.resources.get(
+                    api_version="v1", kind="Namespace"
+                )
                 namespace_manifest = {
                     "apiVersion": "v1",
                     "kind": "Namespace",
