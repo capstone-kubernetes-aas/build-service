@@ -39,7 +39,6 @@ from kubernetes.client.rest import ApiException
 
 from kubernetes import config, dynamic
 from kubernetes.client import api_client
-import time
 
 app = Flask(__name__)
 dclient = docker.from_env()
@@ -181,26 +180,29 @@ def build_repo(repo_dir, branch, deploy_conf, service_conf):
     # return label of build image
     return image_name
 
-# create a new namespace specified in the deployment script and the namespace is not already in the system.
-# otherwise, if not specified, use default as namespace 
-def create_namespace(kubernetes_api,deploy_conf):
 
-    if (not "namespace" in deploy_conf["metadata"]):
+# create a new namespace specified in the deployment script and the namespace is not already in the system.
+# otherwise, if not specified, use default as namespace
+def create_namespace(kubernetes_api, deploy_conf):
+
+    if "namespace" not in deploy_conf["metadata"]:
         # namespace is not specified in deplyoment config, just say the that namespace is default
         deploy_conf["metadata"]["namespace"] = "default"
         return
-    elif (deploy_conf["metadata"]["namespace"] == "default"):
+    elif deploy_conf["metadata"]["namespace"] == "default":
         # do nothing
         return
-    
+
     ns = deploy_conf["metadata"]["namespace"]
     try:
         namespaces = kubernetes_api.list_namespaced_deployment(ns)
         # logging.debug(namespaces.items)
-        if (len(namespaces.items) > 0):
+        if len(namespaces.items) > 0:
             logging.debug(f"deployments found for {ns}. Don't need to make namespace")
-        else: 
-            logging.debug(f"no deployments found for namespace, time to make another one")
+        else:
+            logging.debug(
+                "no deployments found for namespace, time to make another one"
+            )
             testclient = dynamic.DynamicClient(
                 api_client.ApiClient(configuration=config.load_kube_config())
             )
@@ -214,7 +216,7 @@ def create_namespace(kubernetes_api,deploy_conf):
             logging.debug(f"created a new namespace :{namespace_manifest}")
     except Exception as e:
         logging.debug(f"no namespaces on the pi :{e}")
-        
+
 
 # POST /build: JSON API to start new build
 @app.route("/build", methods=["POST"])
@@ -257,7 +259,7 @@ def build_request():
         kubernetes.config.load_kube_config()
         kubernetes_api = kubernetes.client.AppsV1Api()
         try:
-            create_namespace(kubernetes_api,deploy_conf)
+            create_namespace(kubernetes_api, deploy_conf)
             kubernetes_api.create_namespaced_deployment(
                 body=deploy_conf, namespace=deploy_conf["metadata"]["namespace"]
             )
@@ -320,7 +322,9 @@ def restart_request(image_name):
         kubernetes_api = kubernetes.client.AppsV1Api()
         try:
             kubernetes_api.patch_namespaced_deployment(
-                name=image_name, namespace=deploy_conf["metadata"]["namespace"], body=deploy_conf
+                name=image_name,
+                namespace=deploy_conf["metadata"]["namespace"],
+                body=deploy_conf,
             )
         except ApiException as e:
             logging.error(f"failed to restart: {e}")
@@ -365,14 +369,16 @@ if __name__ == "__main__":
             if args["--restart"]:
                 image_name = args["--restart"]
                 kubernetes_api.patch_namespaced_deployment(
-                    name=image_name, namespace=deploy_conf["metadata"]["namespace"], body=deploy_conf
+                    name=image_name,
+                    namespace=deploy_conf["metadata"]["namespace"],
+                    body=deploy_conf,
                 )
                 logging.info(f"Successfully restarted '{image_name}'")
 
             elif args["--delete"]:
                 image_name = args["--delete"]
                 kubernetes_api.delete_namespaced_deployment(
-                    name=image_name, namespace=deploy_conf["metadata"]["namespace"]
+                    name=image_name, namespace=(deploy_conf["metadata"]["namespace"])
                 )
                 logging.info(f"Successfully deleted '{image_name}'")
 
@@ -384,9 +390,9 @@ if __name__ == "__main__":
                     logging.error(f"Error building repo: {e}")
                     exit(1)
 
-                create_namespace(kubernetes_api,deploy_conf)
+                create_namespace(kubernetes_api, deploy_conf)
                 kubernetes_api.create_namespaced_deployment(
-                    body=deploy_conf, namespace=deploy_conf["metadata"]["namespace"]
+                    body=deploy_conf, namespace=(deploy_conf["metadata"]["namespace"])
                 )
 
                 logging.info(
