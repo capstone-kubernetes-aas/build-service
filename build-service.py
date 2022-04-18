@@ -209,10 +209,7 @@ def create_namespace(kubernetes_api, deploy_conf):
             namespace_manifest = {
                 "apiVersion": "v1",
                 "kind": "Namespace",
-                "metadata": {
-                    "name": ns, 
-                    "resourceversion": "v1"
-                    },
+                "metadata": {"name": ns, "resourceversion": "v1"},
             }
             namespace_api.create(body=namespace_manifest)
             logging.debug(f"created a new namespace :{namespace_manifest}")
@@ -324,7 +321,9 @@ def restart_request(image_name):
         kubernetes_api = kubernetes.client.AppsV1Api()
         try:
             kubernetes_api.patch_namespaced_deployment(
-                name=image_name, namespace=deploy_conf["metadata"]["namespace"], body=deploy_conf
+                name=image_name,
+                namespace=deploy_conf["metadata"]["namespace"],
+                body=deploy_conf
             )
         except ApiException as e:
             logging.error(f"failed to restart: {e}")
@@ -369,7 +368,9 @@ if __name__ == "__main__":
             if args["--restart"]:
                 image_name = args["--restart"]
                 kubernetes_api.patch_namespaced_deployment(
-                    name=image_name, namespace=(deploy_conf["metadata"]["namespace"]), body=deploy_conf
+                    name=image_name,
+                    namespace=(deploy_conf["metadata"]["namespace"]),
+                    body=deploy_conf
                 )
                 logging.info(f"Successfully restarted '{image_name}'")
 
