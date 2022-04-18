@@ -186,7 +186,7 @@ def build_repo(repo_dir, branch, deploy_conf, service_conf):
 def create_namespace(kubernetes_api, deploy_conf):
 
     if "namespace" not in deploy_conf["metadata"]:
-        # namespace is not specified in deplyoment config, just say the that namespace is default
+        # namespace is not specified in deplyoment config, just set namespace as default
         deploy_conf["metadata"]["namespace"] = "default"
         return
     elif deploy_conf["metadata"]["namespace"] == "default":
@@ -196,26 +196,30 @@ def create_namespace(kubernetes_api, deploy_conf):
     ns = deploy_conf["metadata"]["namespace"]
     try:
         namespaces = kubernetes_api.list_namespaced_deployment(ns)
-        # logging.debug(namespaces.items)
         if len(namespaces.items) > 0:
             logging.debug(f"deployments found for {ns}. Don't need to make namespace")
         else:
-            logging.debug(
-                "no deployments found for namespace, time to make another one"
-            )
-            testclient = dynamic.DynamicClient(
-                api_client.ApiClient(configuration=config.load_kube_config())
-            )
-            namespace_api = testclient.resources.get(api_version="v1", kind="Namespace")
-            namespace_manifest = {
-                "apiVersion": "v1",
-                "kind": "Namespace",
-                "metadata": {"name": ns, "resourceversion": "v1"},
-            }
-            namespace_api.create(body=namespace_manifest)
-            logging.debug(f"created a new namespace :{namespace_manifest}")
+            try:
+                testclient = dynamic.DynamicClient(
+                    api_client.ApiClient(configuration=config.load_kube_config())
+                )
+                namespace_api = testclient.resources.get(
+                    api_version="v1", kind="Namespace"
+                )
+                namespace_manifest = {
+                    "apiVersion": "v1",
+                    "kind": "Namespace",
+                    "metadata": {"name": ns, "resourceversion": "v1"},
+                }
+                namespace_api.create(body=namespace_manifest)
+                logging.debug(f"created a new namespace :{namespace_manifest}")
+            except Exception as e:
+                logging.error(f"failed to create namespace: {e}")
+                return {"err": f"Failed to create namespace: {e}"}, 500
+
     except Exception as e:
-        logging.debug(f"no namespaces on the pi :{e}")
+        # try to get the deployments for the namespace
+        logging.debug(f"no deployments for namespace on the pi :{e}")
 
 
 # POST /build: JSON API to start new build
