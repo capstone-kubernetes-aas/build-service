@@ -186,7 +186,7 @@ def build_repo(repo_dir, branch, deploy_conf, service_conf):
 
 def create_namespace(kubernetes_api, deploy_conf):
 
-    if (not "namespace" in deploy_conf["metadata"]):
+    if ("namespace" not in deploy_conf["metadata"]):
         # namespace is not specified in deplyoment config, just say the that namespace is default
         deploy_conf["metadata"]["namespace"] = "default"
         return
@@ -201,7 +201,7 @@ def create_namespace(kubernetes_api, deploy_conf):
         if (len(namespaces.items) > 0):
             logging.debug(f"deployments found for {ns}. Don't need to make namespace")
         else:
-            logging.debug(f"no deployments found for namespace, time to make another one")
+            logging.debug("no deployments found for namespace, time to make another one")
             testclient = dynamic.DynamicClient(
                 api_client.ApiClient(configuration=config.load_kube_config())
             )
@@ -209,7 +209,10 @@ def create_namespace(kubernetes_api, deploy_conf):
             namespace_manifest = {
                 "apiVersion": "v1",
                 "kind": "Namespace",
-                "metadata": {"name": ns, "resourceversion": "v1"},
+                "metadata": {
+                    "name": ns, 
+                    "resourceversion": "v1"
+                    },
             }
             namespace_api.create(body=namespace_manifest)
             logging.debug(f"created a new namespace :{namespace_manifest}")
@@ -366,14 +369,14 @@ if __name__ == "__main__":
             if args["--restart"]:
                 image_name = args["--restart"]
                 kubernetes_api.patch_namespaced_deployment(
-                    name=image_name, namespace=deploy_conf["metadata"]["namespace"], body=deploy_conf
+                    name=image_name, namespace=(deploy_conf["metadata"]["namespace"]), body=deploy_conf
                 )
                 logging.info(f"Successfully restarted '{image_name}'")
 
             elif args["--delete"]:
                 image_name = args["--delete"]
                 kubernetes_api.delete_namespaced_deployment(
-                    name=image_name, namespace=deploy_conf["metadata"]["namespace"]
+                    name=image_name, namespace=(deploy_conf["metadata"]["namespace"])
                 )
                 logging.info(f"Successfully deleted '{image_name}'")
 
@@ -387,7 +390,7 @@ if __name__ == "__main__":
 
                 create_namespace(kubernetes_api, deploy_conf)
                 kubernetes_api.create_namespaced_deployment(
-                    body=deploy_conf, namespace=deploy_conf["metadata"]["namespace"]
+                    body=deploy_conf, namespace=(deploy_conf["metadata"]["namespace"])
                 )
 
                 logging.info(
