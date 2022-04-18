@@ -180,10 +180,9 @@ def build_repo(repo_dir, branch, deploy_conf, service_conf):
     # return label of build image
     return image_name
 
+
 # create a new namespace specified in the deployment script and the namespace is not already in the system.
 # otherwise, if not specified, use default as namespace
-
-
 def create_namespace(kubernetes_api, deploy_conf):
 
     if "namespace" not in deploy_conf["metadata"]:
@@ -323,7 +322,10 @@ def restart_request(image_name):
         kubernetes_api = kubernetes.client.AppsV1Api()
         try:
             kubernetes_api.patch_namespaced_deployment(
-                name=image_name, namespace=deploy_conf["metadata"]["namespace"], body=deploy_conf)
+                name=image_name,
+                namespace=deploy_conf["metadata"]["namespace"],
+                body=deploy_conf,
+            )
         except ApiException as e:
             logging.error(f"failed to restart: {e}")
             return {"err": f"Failed to restart: {e}"}, 500
@@ -367,7 +369,10 @@ if __name__ == "__main__":
             if args["--restart"]:
                 image_name = args["--restart"]
                 kubernetes_api.patch_namespaced_deployment(
-                    name=image_name, namespace=(deploy_conf["metadata"]["namespace"]), body=deploy_conf)
+                    name=image_name,
+                    namespace=deploy_conf["metadata"]["namespace"],
+                    body=deploy_conf,
+                )
                 logging.info(f"Successfully restarted '{image_name}'")
 
             elif args["--delete"]:
