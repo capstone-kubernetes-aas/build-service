@@ -84,6 +84,15 @@ class ArchNotSupported(Exception):
         return f"image '{self.image}' does not support {self.arch} (supports {', '.join(self.supported)})"
 
 
+class NameSpaceCreationFailed(kubernetes.client.exceptions.ApiException):
+    def __init__(self, namespace, message="unable to create the namespace"):
+        self.namespace = namespace
+        self.message = message
+
+    def __str__(self):
+        return f"{self.message} '{self.namespace}'"
+
+
 def load_config_file(filename):
     logging.info(f"reading config file from {filename}")
 
@@ -199,27 +208,21 @@ def create_namespace(kubernetes_api, deploy_conf):
         if len(namespaces.items) > 0:
             logging.debug(f"deployments found for {ns}. Don't need to make namespace")
         else:
-            try:
-                testclient = dynamic.DynamicClient(
-                    api_client.ApiClient(configuration=config.load_kube_config())
-                )
-                namespace_api = testclient.resources.get(
-                    api_version="v1", kind="Namespace"
-                )
-                namespace_manifest = {
-                    "apiVersion": "v1",
-                    "kind": "Namespace",
-                    "metadata": {"name": ns, "resourceversion": "v1"},
-                }
-                namespace_api.create(body=namespace_manifest)
-                logging.debug(f"created a new namespace :{namespace_manifest}")
-            except Exception as e:
-                logging.error(f"failed to create namespace: {e}")
-                return {"err": f"Failed to create namespace: {e}"}, 500
+            testclient = dynamic.DynamicClient(
+                api_client.ApiClient(configuration=config.load_kube_config())
+            )
+            namespace_api = testclient.resources.get(api_version="v1", kind="Namespace")
+            namespace_manifest = {
+                "apiVersion": "v1",
+                "kind": "Namespace",
+                "metadata": {"name": ns, "resourceversion": "v1"},
+            }
+            namespace_api.create(body=namespace_manifest)
+            logging.debug(f"created a new namespace :{namespace_manifest}")
 
-    except Exception as e:
-        # try to get the deployments for the namespace
-        logging.debug(f"no deployments for namespace on the pi :{e}")
+    except kubernetes.client.exceptions.ApiException:
+        # raise error when failed to make the namespace
+        raise NameSpaceCreationFailed(ns)
 
 
 # POST /build: JSON API to start new build
@@ -264,6 +267,10 @@ def build_request():
         kubernetes_api = kubernetes.client.AppsV1Api()
         try:
             create_namespace(kubernetes_api, deploy_conf)
+        except ApiException as e:
+            logging.error(f"Error creating namespace: {e}")
+            return {"err": f"Failed to deploy: {e}"}, 500
+        try:
             kubernetes_api.create_namespaced_deployment(
                 body=deploy_conf, namespace=deploy_conf["metadata"]["namespace"]
             )
@@ -389,12 +396,15 @@ if __name__ == "__main__":
             else:
                 try:
                     image_name = build_repo(repo_dir, branch, deploy_conf, service_conf)
-
                 except Exception as e:
                     logging.error(f"Error building repo: {e}")
                     exit(1)
+                try:
+                    create_namespace(kubernetes_api, deploy_conf)
+                except ApiException as e:
+                    logging.error(f"Error creating namespace: {e}")
+                    exit(1)
 
-                create_namespace(kubernetes_api, deploy_conf)
                 kubernetes_api.create_namespaced_deployment(
                     body=deploy_conf, namespace=(deploy_conf["metadata"]["namespace"])
                 )
