@@ -83,6 +83,7 @@ class ArchNotSupported(Exception):
     def __str__(self):
         return f"image '{self.image}' does not support {self.arch} (supports {', '.join(self.supported)})"
 
+
 class NameSpaceCreationFailed(kubernetes.client.exceptions.ApiException):
     def __init__(self, namespace, message="unable to create the namespace"):
         self.namespace = namespace
@@ -90,6 +91,7 @@ class NameSpaceCreationFailed(kubernetes.client.exceptions.ApiException):
 
     def __str__(self):
         return f"{self.message} '{self.namespace}'"
+
 
 def load_config_file(filename):
     logging.info(f"reading config file from {filename}")
@@ -209,9 +211,7 @@ def create_namespace(kubernetes_api, deploy_conf):
             testclient = dynamic.DynamicClient(
                 api_client.ApiClient(configuration=config.load_kube_config())
             )
-            namespace_api = testclient.resources.get(
-                api_version="v1", kind="Namespace"
-            )
+            namespace_api = testclient.resources.get(api_version="v1", kind="Namespace")
             namespace_manifest = {
                 "apiVersion": "v1",
                 "kind": "Namespace",
@@ -220,10 +220,9 @@ def create_namespace(kubernetes_api, deploy_conf):
             namespace_api.create(body=namespace_manifest)
             logging.debug(f"created a new namespace :{namespace_manifest}")
 
-    except kubernetes.client.exceptions.ApiException as e:
+    except kubernetes.client.exceptions.ApiException:
         # raise error when failed to make the namespace
         raise NameSpaceCreationFailed(ns)
-
 
 
 # POST /build: JSON API to start new build
@@ -405,7 +404,7 @@ if __name__ == "__main__":
                 except ApiException as e:
                     logging.error(f"Error creating namespace: {e}")
                     exit(1)
-                    
+
                 kubernetes_api.create_namespaced_deployment(
                     body=deploy_conf, namespace=(deploy_conf["metadata"]["namespace"])
                 )
