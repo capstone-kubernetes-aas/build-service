@@ -207,6 +207,7 @@ def create_namespace(kubernetes_api, deploy_conf):
         namespaces = kubernetes_api.list_namespaced_deployment(ns)
         if len(namespaces.items) > 0:
             logging.debug(f"deployments found for {ns}. Don't need to make namespace")
+            raise NameSpaceCreationFailed(ns)
         else:
             testclient = dynamic.DynamicClient(
                 api_client.ApiClient(configuration=config.load_kube_config())
