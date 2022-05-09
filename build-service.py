@@ -112,17 +112,16 @@ def get_deploy_conf(deploy_conf, repo_dir):
         deploy_conf = "kaas.deploy.yml"
 
     if isinstance(deploy_conf, str):
-        loaded_conf = load_config_file(f"{repo_dir}/{deploy_conf}")
-        # make image build to localhost registry by modifying tag in config, if not present
-        image_name = loaded_conf["spec"]["template"]["spec"]["containers"][0]["image"]
-        if not image_name.startswith("localhost:5000/"):
-            loaded_conf["spec"]["template"]["spec"]["containers"][0]["image"] = (
-                "localhost:5000/" + image_name
-            )
-        return loaded_conf
-    else:
-        # config is from request, just pass it through
-        return deploy_conf
+        deploy_conf = load_config_file(f"{repo_dir}/{deploy_conf}")
+
+    # make image build to localhost registry by modifying tag in config, if not present
+    image_name = deploy_conf["spec"]["template"]["spec"]["containers"][0]["image"]
+    if not image_name.startswith("localhost:5000/"):
+        deploy_conf["spec"]["template"]["spec"]["containers"][0]["image"] = (
+            "localhost:5000/" + image_name
+        )
+
+    return deploy_conf
 
 
 def get_service_conf(service_conf, repo_dir):
