@@ -110,6 +110,7 @@ def get_deploy_conf(deploy_conf, repo_dir):
     # parse options from default config if none given
     if deploy_conf is None:
         deploy_conf = "kaas.deploy.yml"
+
     if isinstance(deploy_conf, str):
         loaded_conf = load_config_file(f"{repo_dir}/{deploy_conf}")
         # make image build to localhost registry by modifying tag in config, if not present
@@ -119,6 +120,9 @@ def get_deploy_conf(deploy_conf, repo_dir):
                 "localhost:5000/" + image_name
             )
         return loaded_conf
+    else:
+        # config is from request, just pass it through
+        return deploy_conf
 
 
 def get_service_conf(service_conf, repo_dir):
@@ -127,6 +131,9 @@ def get_service_conf(service_conf, repo_dir):
         service_conf = "kaas.service.yml"
     if isinstance(service_conf, str):  # if string, its a filepath to load from
         return load_config_file(f"{repo_dir}/{service_conf}")
+    else:
+        # config is from request, just pass it through
+        return service_conf
 
 
 def clone_repo(repo, branch, repo_dir):
