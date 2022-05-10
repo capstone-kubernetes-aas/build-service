@@ -130,3 +130,5 @@ dmypy.json
 
 # example templates
 *.yml
+
+.vscode

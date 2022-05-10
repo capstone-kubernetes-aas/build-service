@@ -271,15 +271,25 @@ def build_request():
         logging.debug("deploying to k8s")
         # load kube config from ~/.kube/config
         kubernetes.config.load_kube_config()
-        kubernetes_api = kubernetes.client.AppsV1Api()
+        kubernetes_app_api = kubernetes.client.AppsV1Api()
+        kubernetes_core_api = kubernetes.client.CoreV1Api()
+
         try:
-            create_namespace(kubernetes_api, deploy_conf)
+            create_namespace(kubernetes_app_api, deploy_conf)
         except ApiException as e:
             logging.error(f"Error creating namespace: {e}")
             return {"err": f"Failed to deploy: {e}"}, 500
         try:
-            kubernetes_api.create_namespaced_deployment(
+            kubernetes_app_api.create_namespaced_deployment(
                 body=deploy_conf, namespace=deploy_conf["metadata"]["namespace"]
+            )
+        except ApiException as e:
+            logging.error(f"failed to deploy: {e}")
+            return {"err": f"Failed to deploy: {e}"}, 500
+
+        try:
+            kubernetes_core_api.create_namespaced_service(
+                body=service_conf, namespace=deploy_conf["metadata"]["namespace"]
             )
         except ApiException as e:
             logging.error(f"failed to deploy: {e}")
@@ -299,9 +309,9 @@ def delete_request(image_name):
     logging.debug(f"deleting {image_name} from k8s")
     # load kube config from ~/.kube/config
     kubernetes.config.load_kube_config()
-    kubernetes_api = kubernetes.client.AppsV1Api()
+    kubernetes_app_api = kubernetes.client.AppsV1Api()
     try:
-        kubernetes_api.delete_namespaced_deployment(
+        kubernetes_app_api.delete_namespaced_deployment(
             name=image_name, namespace=deploy_conf["metadata"]["namespace"]
         )
     except ApiException as e:
@@ -337,9 +347,9 @@ def restart_request(image_name):
         logging.debug(f"restarting {image_name} in k8s")
         # load kube config from ~/.kube/config
         kubernetes.config.load_kube_config()
-        kubernetes_api = kubernetes.client.AppsV1Api()
+        kubernetes_app_api = kubernetes.client.AppsV1Api()
         try:
-            kubernetes_api.patch_namespaced_deployment(
+            kubernetes_app_api.patch_namespaced_deployment(
                 name=image_name,
                 namespace=deploy_conf["metadata"]["namespace"],
                 body=deploy_conf,
@@ -382,11 +392,13 @@ if __name__ == "__main__":
 
         # load kube config from ~/.kube/config
         kubernetes.config.load_kube_config()
-        kubernetes_api = kubernetes.client.AppsV1Api()
+        kubernetes_app_api = kubernetes.client.AppsV1Api()
+        kubernetes_core_api = kubernetes.client.CoreV1Api()
+
         try:
             if args["--restart"]:
                 image_name = args["--restart"]
-                kubernetes_api.patch_namespaced_deployment(
+                kubernetes_app_api.patch_namespaced_deployment(
                     name=image_name,
                     namespace=deploy_conf["metadata"]["namespace"],
                     body=deploy_conf,
@@ -395,7 +407,7 @@ if __name__ == "__main__":
 
             elif args["--delete"]:
                 image_name = args["--delete"]
-                kubernetes_api.delete_namespaced_deployment(
+                kubernetes_app_api.delete_namespaced_deployment(
                     name=image_name, namespace=(deploy_conf["metadata"]["namespace"])
                 )
                 logging.info(f"Successfully deleted '{image_name}'")
@@ -406,19 +418,30 @@ if __name__ == "__main__":
                 except Exception as e:
                     logging.error(f"Error building repo: {e}")
                     exit(1)
+
                 try:
-                    create_namespace(kubernetes_api, deploy_conf)
+                    create_namespace(kubernetes_app_api, deploy_conf)
                 except ApiException as e:
                     logging.error(f"Error creating namespace: {e}")
                     exit(1)
 
-                kubernetes_api.create_namespaced_deployment(
-                    body=deploy_conf, namespace=(deploy_conf["metadata"]["namespace"])
-                )
+                try:
+                    kubernetes_app_api.create_namespaced_deployment(
+                        body=deploy_conf, namespace=deploy_conf["metadata"]["namespace"]
+                    )
+                except ApiException as e:
+                    logging.error(f"Error creating deployment: {e}")
+                    exit(1)
 
-                logging.info(
-                    f"Repository built and deployed successfully as '{image_name}'"
-                )
+                try:
+                    kubernetes_core_api.create_namespaced_service(
+                        body=service_conf, namespace=deploy_conf["metadata"]["namespace"]
+                    )
+                except ApiException as e:
+                    logging.error(f"Error creating service: {e}")
+                    exit(1)
+
+                logging.info(f"Repository built and deployed successfully as '{image_name}'")
 
         except ApiException as e:
             logging.error(f"Error deploying repo: {e}")
