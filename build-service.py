@@ -408,7 +408,7 @@ if __name__ == "__main__":
             elif args["--delete"]:
                 image_name = args["--delete"]
                 kubernetes_app_api.delete_namespaced_deployment(
-                    name=image_name, namespace=(deploy_conf["metadata"]["namespace"])
+                    name=image_name, namespace=deploy_conf["metadata"]["namespace"]
                 )
                 logging.info(f"Successfully deleted '{image_name}'")
 
@@ -435,13 +435,16 @@ if __name__ == "__main__":
 
                 try:
                     kubernetes_core_api.create_namespaced_service(
-                        body=service_conf, namespace=deploy_conf["metadata"]["namespace"]
+                        body=service_conf,
+                        namespace=deploy_conf["metadata"]["namespace"],
                     )
                 except ApiException as e:
                     logging.error(f"Error creating service: {e}")
                     exit(1)
 
-                logging.info(f"Repository built and deployed successfully as '{image_name}'")
+                logging.info(
+                    f"Repository built and deployed successfully as '{image_name}'"
+                )
 
         except ApiException as e:
             logging.error(f"Error deploying repo: {e}")
